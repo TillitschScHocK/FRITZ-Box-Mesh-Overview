@@ -1,5 +1,9 @@
 # Fritz Mesh
 Proxy daemon to show the Fritz!Box mesh overview outside of the regular Fritz!Box user interface.
+
+> [!WARNING]
+__This component is compatible only up to FritzOS version < 8.0.__
+
 <br/><br/>
 E.g. to include it in an Home Assistant Dashboard:
 
