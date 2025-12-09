@@ -1,34 +1,42 @@
-ARG BUILD_FROM=python:3.11-slim
-FROM ${BUILD_FROM}
+FROM python:3.11-slim
 
-# Umgebungsvariablen für Python
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Systempakete installieren: Chromium, Chromedriver und nötige Libs
+# Chrome und Dependencies installieren
 RUN apt-get update && apt-get install -y \
-    chromium \
-    chromium-driver \
-    libnss3 \
-    libgconf-2-4 \
-    libfontconfig1 \
     wget \
     gnupg \
+    unzip \
+    curl \
+    ca-certificates \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
-# Arbeitsverzeichnis erstellen
+# ChromeDriver installieren
+RUN CHROMEDRIVER_VERSION=$(curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE) && \
+    wget -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip && \
+    unzip /tmp/chromedriver.zip -d /usr/bin && \
+    rm /tmp/chromedriver.zip && \
+    chmod +x /usr/bin/chromedriver
+
+# Arbeitsverzeichnis
 WORKDIR /app
 
-# Requirements kopieren und installieren
+# Python-Dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Skripte kopieren
-COPY . .
+# App-Dateien kopieren
+COPY main.py .
+COPY run.sh .
 RUN chmod +x run.sh
 
-# Port für den Webserver
+# Static-Ordner erstellen
+RUN mkdir -p /app/static
+
+# Port freigeben
 EXPOSE 8000
 
-# Startbefehl
+# Startskript
 CMD ["./run.sh"]

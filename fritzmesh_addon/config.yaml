@@ -1,21 +1,26 @@
 name: "Fritz!Box Mesh Overview"
 version: "2.0.0"
-slug: "fritz_mesh_overview"
-description: "Zeigt die Fritz!Box Mesh Übersicht (kompatibel mit FritzOS 8.0+ via Browser-Emulation)."
+slug: "fritzmesh"
+description: "Zeigt die Fritz!Box Mesh-Übersicht an (FritzOS 8.0+ kompatibel)"
 arch:
+  - armhf
+  - armv7
   - aarch64
   - amd64
-  - armv7
-startup: application
+  - i386
+startup: services
 boot: auto
-map:
-  - "8000:8000"
+ports:
+  8000/tcp: 8000
+ports_description:
+  8000/tcp: Web-Interface
 options:
-  fritz_host: "http://fritz.box"
-  fritz_pass: "DeinPasswort"
+  fritz_host: "fritz.box"
+  fritz_pass: ""
   refresh_rate: 10
 schema:
   fritz_host: str
   fritz_pass: password
-  refresh_rate: int
-image: "tillitschshock/fritz-mesh-overview-{arch}"
+  fritz_user: str?
+  refresh_rate: int(5,300)?
+image: "ghcr.io/{arch}-addon-fritzmesh"
