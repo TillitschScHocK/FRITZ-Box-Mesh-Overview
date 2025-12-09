@@ -1,17 +1,34 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+ARG BUILD_FROM=python:3.11-slim
+FROM ${BUILD_FROM}
 
-# Install requirements for add-on
-RUN \
-  apk add --no-cache \
-    python3 py3-requests py3-aiohttp
+# Umgebungsvariablen für Python
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Python 3 HTTP Server serves the current working dir
-# So let's set it to our add-on persistent data directory.
-WORKDIR /data
+# Systempakete installieren: Chromium, Chromedriver und nötige Libs
+RUN apt-get update && apt-get install -y \
+    chromium \
+    chromium-driver \
+    libnss3 \
+    libgconf-2-4 \
+    libfontconfig1 \
+    wget \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy data for add-on
-COPY fritzmesh.py /
-RUN chmod a+x /fritzmesh.py
+# Arbeitsverzeichnis erstellen
+WORKDIR /app
 
-CMD [ "/fritzmesh.py", "-hassio", "-nocache" ]
+# Requirements kopieren und installieren
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Skripte kopieren
+COPY . .
+RUN chmod +x run.sh
+
+# Port für den Webserver
+EXPOSE 8000
+
+# Startbefehl
+CMD ["./run.sh"]

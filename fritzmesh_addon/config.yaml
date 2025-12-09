@@ -1,23 +1,21 @@
-name: "Fritz Mesh"
-description: "FritzMesh - live view of your Fritz!Box Mesh network"
-version: "1.0.2"
-slug: "fritzmesh"
-init: false
-ingress: true
-panel_title: Network
-panel_icon: mdi:lan
+name: "Fritz!Box Mesh Overview"
+version: "2.0.0"
+slug: "fritz_mesh_overview"
+description: "Zeigt die Fritz!Box Mesh Übersicht (kompatibel mit FritzOS 8.0+ via Browser-Emulation)."
 arch:
   - aarch64
   - amd64
-  - armhf
   - armv7
-  - i386
-startup: services
+startup: application
+boot: auto
+map:
+  - "8000:8000"
 options:
-  Fritzbox username: ""
-  Fritzbox password: ""
-  fritzbox host:     "fritz.box"
+  fritz_host: "http://fritz.box"
+  fritz_pass: "DeinPasswort"
+  refresh_rate: 10
 schema:
-  Fritzbox username: str
-  Fritzbox password: str
-  fritzbox host:     str
+  fritz_host: str
+  fritz_pass: password
+  refresh_rate: int
+image: "tillitschshock/fritz-mesh-overview-{arch}"
