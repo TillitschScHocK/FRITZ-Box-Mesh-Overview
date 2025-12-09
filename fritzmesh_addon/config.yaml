@@ -1,14 +1,16 @@
 name: "Fritz!Box Mesh Overview"
-version: "2.0.0"
+version: "2.0.1"
 slug: "fritzmesh"
 description: "Zeigt die Fritz!Box Mesh-Übersicht an (FritzOS 8.0+ kompatibel)"
+url: "https://github.com/TillitschScHocK/FRITZ-Box-Mesh-Overview"
 arch:
   - armhf
   - armv7
   - aarch64
   - amd64
   - i386
-startup: services
+init: false
+startup: application
 boot: auto
 ports:
   8000/tcp: 8000
@@ -17,10 +19,10 @@ ports_description:
 options:
   fritz_host: "fritz.box"
   fritz_pass: ""
+  fritz_user: ""
   refresh_rate: 10
 schema:
   fritz_host: str
   fritz_pass: password
-  fritz_user: str?
-  refresh_rate: int(5,300)?
-image: "ghcr.io/{arch}-addon-fritzmesh"
+  fritz_user: str
+  refresh_rate: "int(5,300)"
