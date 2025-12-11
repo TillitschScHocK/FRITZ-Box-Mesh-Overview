@@ -31,6 +31,9 @@ else:
 SCREENSHOT_PATH = "/app/static/mesh.png"
 Path("/app/static").mkdir(parents=True, exist_ok=True)
 
+# Placeholder-Bild erstellen (falls Mesh-Screenshot nicht verfügbar)
+PLACEHOLDER_PATH = "/app/static/placeholder.png"
+
 # Logging
 logging.basicConfig(
     level=logging.INFO,
@@ -47,11 +50,30 @@ app.logger.setLevel(logging.ERROR)
 last_screenshot_time = 0
 
 
+# ============== PLACEHOLDER IMAGE ==============
+def create_placeholder():
+    """Erstellt ein Placeholder-Bild wenn keine Daten verfügbar sind"""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        
+        img = Image.new('RGB', (1920, 1080), color='white')
+        draw = ImageDraw.Draw(img)
+        
+        # Text zeichnen
+        text = "Warte auf Mesh-Daten...\n\nBrowser wird gestartet..."
+        draw.text((960, 540), text, fill='gray', anchor="mm", align="center")
+        
+        img.save(PLACEHOLDER_PATH)
+        logger.info("Placeholder-Bild erstellt")
+    except Exception as e:
+        logger.warning(f"Placeholder-Fehler (ignoriert): {e}")
+
+
 # ============== PLAYWRIGHT FUNCTIONS ==============
 async def login_to_fritz(page):
     """Authentifiziert sich bei der FritzBox"""
     try:
-        logger.info(f"Öffne {FRITZ_URL}...")
+        logger.info(f"\u00d6ffne {FRITZ_URL}...")
         await page.goto(FRITZ_URL, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(2000)
 
@@ -126,6 +148,7 @@ async def navigate_to_mesh(page):
             return True
         except:
             logger.warning("js3-view nicht gefunden, versuche trotzdem Screenshot...")
+            await page.wait_for_timeout(2000)
             return True
 
     except Exception as e:
@@ -150,6 +173,7 @@ async def take_screenshot(page):
 async def browser_session():
     """Haupt-Browser-Session"""
     async with async_playwright() as p:
+        browser = None
         try:
             logger.info("Starte Chromium Browser...")
             browser = await p.chromium.launch(headless=True)
@@ -181,7 +205,7 @@ async def browser_session():
             while True:
                 # Nach 30 Minuten neu laden
                 if time.time() - session_start > 1800:
-                    logger.info("Session-Refresh nach 30 Minuten")
+                    logger.info("♿ Session-Refresh nach 30 Minuten")
                     break
 
                 # Screenshot machen
@@ -206,8 +230,8 @@ async def browser_session():
             logger.error(f"Browser-Session Fehler: {e}")
         finally:
             try:
-                await context.close()
-                await browser.close()
+                if browser:
+                    await browser.close()
             except:
                 pass
 
@@ -226,11 +250,11 @@ def browser_loop():
             error_count += 1
         finally:
             if error_count >= max_errors:
-                logger.info("Warte 60s vor Neustart...")
+                logger.info("⚠ Warte 60s vor Neustart...")
                 time.sleep(60)
                 error_count = 0
             else:
-                logger.info("Warte 10s vor Neustart...")
+                logger.info("⏱ Warte 10s vor Neustart...")
                 time.sleep(10)
 
 
@@ -285,27 +309,71 @@ def index():
                 background: #f5f5f5;
                 border-radius: 8px;
                 min-height: 400px;
+                position: relative;
             }}
             img {{
                 max-width: 100%;
                 max-height: 100%;
                 object-fit: contain;
             }}
+            .loading {{
+                position: absolute;
+                text-align: center;
+                color: #999;
+            }}
+            .spinner {{
+                border: 3px solid #f3f3f3;
+                border-top: 3px solid #667eea;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 10px;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
         </style>
         <script>
+            var imageLoaded = false;
+            var refreshRate = {REFRESH_RATE};
+            
             function updateImage() {{
                 var img = document.getElementById('mesh-img');
-                img.src = '/mesh.png?t=' + Date.now();
+                var loader = document.getElementById('loader');
+                var timestamp = Date.now();
+                
+                var newImg = new Image();
+                newImg.onload = function() {{
+                    img.src = '/mesh.png?t=' + timestamp;
+                    imageLoaded = true;
+                    if (loader) loader.style.display = 'none';
+                }};
+                newImg.onerror = function() {{
+                    console.log('Bild fehlt, warte...');
+                    if (loader) loader.style.display = 'flex';
+                }};
+                newImg.src = '/mesh.png?t=' + timestamp;
             }}
-            setInterval(updateImage, {REFRESH_RATE * 1000});
+            
+            // Initial load
+            window.addEventListener('load', updateImage);
+            
+            // Auto-refresh
+            setInterval(updateImage, refreshRate * 1000);
         </script>
     </head>
     <body>
         <div class="container">
-            <h1>🌐 Fritz!Box Mesh Übersicht</h1>
+            <h1>🌐 Fritz!Box Mesh</h1>
             <div class="info">Auto-Update: {REFRESH_RATE}s</div>
             <div class="image-container">
-                <img id="mesh-img" src="/mesh.png" alt="Lädt...">
+                <img id="mesh-img" src="/mesh.png" alt="Lade Mesh...">
+                <div id="loader" class="loading" style="display: flex; flex-direction: column; align-items: center;">
+                    <div class="spinner"></div>
+                    <p>Starte Browser und lade Mesh-Daten...</p>
+                </div>
             </div>
         </div>
     </body>
@@ -320,6 +388,13 @@ def get_image():
     if os.path.exists(SCREENSHOT_PATH):
         return send_file(
             SCREENSHOT_PATH,
+            mimetype="image/png",
+            max_age=0,
+            add_etags=False,
+        )
+    elif os.path.exists(PLACEHOLDER_PATH):
+        return send_file(
+            PLACEHOLDER_PATH,
             mimetype="image/png",
             max_age=0,
             add_etags=False,
@@ -339,6 +414,9 @@ def health():
 
 # ============== MAIN ==============
 if __name__ == "__main__":
+    # Placeholder erstellen
+    create_placeholder()
+    
     logger.info("=" * 50)
     logger.info("Fritz!Box Mesh Overview v2.1")
     logger.info("=" * 50)
@@ -355,7 +433,7 @@ if __name__ == "__main__":
     # Flask-Server starten
     logger.info("Starte Webserver auf Port 8000...")
     try:
-        app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False)
+        app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False, threaded=True)
     except KeyboardInterrupt:
         logger.info("Herunterfahren...")
         sys.exit(0)
