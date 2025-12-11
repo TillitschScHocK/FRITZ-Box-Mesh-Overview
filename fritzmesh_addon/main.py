@@ -75,57 +75,55 @@ async def browser_session():
             await page.wait_for_timeout(2000)
 
             # Prüfe ob Login nötig ist
-            login_field = page.query_selector("#uiPassInput")
-            
-            if login_field:
-                logger.info("Login-Formular gefunden")
+            try:
+                login_field = await page.query_selector("#uiPassInput")
                 
-                # Benutzer wählen (falls möglich)
-                try:
-                    user_select = page.query_selector("#uiViewUser")
-                    if user_select:
-                        await user_select.select_option(value=FRITZ_USER)
-                        logger.info(f"Benutzer '{FRITZ_USER}' ausgewählt")
-                        await page.wait_for_timeout(300)
-                except Exception as e:
-                    logger.debug(f"Benutzer-Auswahl fehlgeschlagen: {e}")
-                
-                # Passwort eingeben
-                logger.info("Gebe Passwort ein...")
-                await page.fill("#uiPassInput", FRITZ_PASS)
-                await page.wait_for_timeout(200)
-                
-                # Login absenden
-                try:
-                    submit_btn = page.query_selector("#submitLoginBtn")
-                    if submit_btn:
-                        await submit_btn.click()
-                        logger.info("Login-Button geklickt")
-                    else:
-                        await page.press("#uiPassInput", "Enter")
-                        logger.info("Enter gedrückt")
-                except Exception as e:
-                    logger.warning(f"Login-Button Fehler (ignoriert): {e}")
-                    # Fallback: einfach weitermachen
-                
-                # Warte auf Weiterleitung
-                await page.wait_for_timeout(4000)
-                logger.info("✓ Login abgeschlossen")
-            else:
-                logger.info("Bereits angemeldet (kein Login-Formular)")
+                if login_field:
+                    logger.info("Login-Formular gefunden")
+                    
+                    # Benutzer wählen (falls möglich)
+                    try:
+                        user_select = await page.query_selector("#uiViewUser")
+                        if user_select:
+                            await page.select_option("#uiViewUser", value=FRITZ_USER)
+                            logger.info(f"Benutzer '{FRITZ_USER}' ausgewählt")
+                            await page.wait_for_timeout(300)
+                    except Exception as e:
+                        logger.debug(f"Benutzer-Auswahl fehlgeschlagen: {e}")
+                    
+                    # Passwort eingeben
+                    logger.info("Gebe Passwort ein...")
+                    await page.fill("#uiPassInput", FRITZ_PASS)
+                    await page.wait_for_timeout(500)
+                    
+                    # Login absenden - mit click()
+                    logger.info("Klicke Login-Button...")
+                    await page.click("#submitLoginBtn")
+                    
+                    # Warte auf Weiterleitung
+                    logger.info("Warte auf Login-Verarbeitung...")
+                    await page.wait_for_timeout(5000)
+                    logger.info("✓ Login abgeschlossen")
+                else:
+                    logger.info("Bereits angemeldet (kein Login-Formular)")
+            except Exception as e:
+                logger.error(f"Login-Fehler: {e}")
+                raise
 
             # === MESH-NAVIGATION ===
             mesh_url = f"{FRITZ_URL}/#/mesh"
-            logger.info(f"Navigiere zu: {mesh_url}")
+            logger.info(f"Navigiere zu Mesh: {mesh_url}")
             await page.goto(mesh_url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(3000)
+            
+            logger.info("Warte auf Mesh-Rendering...")
+            await page.wait_for_timeout(5000)
 
             # Warte auf Mesh-Element
             try:
-                await page.wait_for_selector("js3-view", timeout=8000)
-                logger.info("✓ Mesh-Element gefunden")
+                await page.wait_for_selector("js3-view", timeout=10000)
+                logger.info("✓ Mesh-Element geladen")
             except:
-                logger.warning("js3-view nicht gefunden, versuche trotzdem Screenshot")
+                logger.warning("js3-view nicht gefunden, Screenshot trotzdem versuchen")
             
             await page.wait_for_timeout(2000)  # Rendering abwarten
 
@@ -152,7 +150,7 @@ async def browser_session():
                     screenshot_count += 1
                     
                     if screenshot_count == 1:
-                        logger.info("✓ Erstes Screenshot erfolgreich!")
+                        logger.info("✓ Erstes Mesh-Screenshot erfolgreich!")
                     elif screenshot_count % 20 == 0:
                         logger.info(f"✓ Screenshot #{screenshot_count} erfasst")
                     
@@ -161,7 +159,7 @@ async def browser_session():
                     logger.error(f"Screenshot-Fehler: {e}")
                     error_count += 1
                     if error_count >= 5:
-                        logger.error("Zu viele Screenshot-Fehler, starte neu")
+                        logger.error("Zu viele Screenshot-Fehler, starte Browser neu")
                         break
 
                 # Warten bis nächster Screenshot
@@ -171,7 +169,7 @@ async def browser_session():
             logger.error(f"Browser-Fehler: {e}")
         
         finally:
-            # Cleanup
+            # Cleanup - Fehler ignorieren
             try:
                 if page:
                     await page.close()
