@@ -1,20 +1,29 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Python und minimal Packages
+# Update und Python-Full installieren (notwendig für venv in Debian 12)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
+    python3-full \
+    python3-venv \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Playwright Browser installieren (automatisch heruntergeladen)
-RUN pip3 install --no-cache-dir \
+# Virtual Environment erstellen (PEP 668 Workaround für Debian 12)
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# pip upgrade
+RUN pip install --upgrade pip setuptools wheel
+
+# Python-Packages installieren
+RUN pip install --no-cache-dir \
     playwright==1.40.0 \
     Flask==3.0.0 \
-    Pillow==10.0.0 \
-    && python3 -m playwright install chromium
+    Werkzeug==3.0.0
+
+# Playwright Chromium installieren
+RUN playwright install chromium
 
 WORKDIR /app
 
