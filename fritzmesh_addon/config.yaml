@@ -1,5 +1,5 @@
 name: "Fritz!Box Mesh Overview"
-version: "2.1.0"
+version: "2.2.0"
 slug: "fritzmesh"
 description: "Mesh-Übersicht der Fritz!Box (FritzOS 8.0+ kompatibel)"
 url: "https://github.com/TillitschScHocK/FRITZ-Box-Mesh-Overview"
