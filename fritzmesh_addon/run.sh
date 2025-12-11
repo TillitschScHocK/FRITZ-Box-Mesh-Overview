@@ -15,7 +15,7 @@ export FRITZ_USER
 export REFRESH_RATE
 
 bashio::log.info "========================================="
-bashio::log.info "Fritz!Box Mesh Overview v2.0.2"
+bashio::log.info "Fritz!Box Mesh Overview v2.1"
 bashio::log.info "========================================="
 bashio::log.info "Host: ${FRITZ_HOST}"
 bashio::log.info "Benutzer: ${FRITZ_USER}"
