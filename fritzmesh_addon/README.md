@@ -1,30 +1,37 @@
 # Fritz!Box Mesh Overview - Home Assistant Addon
 
-## 🆕 Beschreibung
+## 🎯 Neu in v3.0: Live Interactive Proxy!
 
-Dieses Addon zeigt die Mesh-Übersicht deiner Fritz!Box direkt in Home Assistant an. Es funktioniert auch mit **FritzOS 8.0+**, wo AVM JavaScript-Obfuskierung nutzt.
+Statt statische Screenshots kannst du deine Fritz!Box jetzt **direkt in Home Assistant steuern**!
 
-### ✨ Features
+✅ **Echte HTML-Steuerung** (nicht nur Bilder)  
+✅ **Interaktiv** (klick auf Links, fühle aus, navigiere)  
+✅ **Live-Updates** (keine veralteten Screenshots)  
+✅ **Persistent Session** (bleibt angemeldet)  
+✅ **Vollständig in Home Assistant integriert**
 
-- 🌐 Automatische Screenshot-Erfassung der Mesh-Übersicht
-- 🔄 Konfigurierbare Auto-Aktualisierung (5-300 Sekunden)
-- 🔓 Sichere Authentifizierung mit Passwort
-- 🚀 Schnell und stabil (Playwright statt Selenium)
-- 😸 Multi-Benutzer-Unterstützung
-- 📊 Web-Interface auf Port 8000
+## 📋 Features
 
-## 💻 Anforderungen
+- 🔴 **Live Mesh-Übersicht** in echtem HTML (nicht Screenshot!)
+- 🎛️ **Voll interaktiv** - klick auf Links, führe Aktionen aus
+- 🔄 **Persistent Session** - bleibt angemeldet und bereit
+- 📱 **Responsive Design** - funktioniert auf Desktop, Tablet, Mobile
+- 🔒 **Sichere Authentifizierung** - nur mit Passwort
+- 🚀 **Schnell** - kein Browser-Rendering, echtes HTML
+- 🏠 **Vollständig in Home Assistant integriert**
+
+## 🛠️ Anforderungen
 
 - Home Assistant OS oder Home Assistant mit Docker-Support
-- Fritz!Box mit aktuellem FritzOS (7.0+)
-- Zugang zur Fritz!Box Web-UI (Standard: http://fritz.box)
-- Admin-Passwort der Fritz!Box
+- Fritz!Box mit FritzOS 7.0+
+- Zugang zur Fritz!Box (Standard: http://fritz.box)
+- Admin-Passwort
 
-## 🛠 Installation
+## 📥 Installation
 
 ### 1. Repository hinzufügen
 
-Fücge folgende URL als benutzerdefiniertes Repository zu Home Assistant hinzu:
+Fücge folgende URL zu Home Assistant hinzu:
 
 ```
 https://github.com/TillitschScHocK/FRITZ-Box-Mesh-Overview
@@ -32,116 +39,155 @@ https://github.com/TillitschScHocK/FRITZ-Box-Mesh-Overview
 
 ### 2. Addon installieren
 
-1. Gehe zu **Einstellungen → Add-ons & Integrationen → Add-on Store**
+1. **Einstellungen** → **Add-ons & Integrationen** → **Add-on Store**
 2. Suche nach **Fritz!Box Mesh Overview**
-3. Klicke auf **Installieren**
-4. Warte auf Completion (ca. 2-3 Minuten)
+3. Klicke **Installieren**
+4. Warte auf Completion (ca. 2-3 Min)
 
 ## ⚙️ Konfiguration
 
-### Erforderliche Einstellungen
-
 | Einstellung | Beschreibung | Standard |
 |-------------|-------------|----------|
-| **Fritz!Box Host** | IP-Adresse oder Hostname der Fritz!Box | `fritz.box` |
-| **Passwort** | Admin-Passwort der Fritz!Box | - |
-| **Benutzer** | Benutzername (optional) | `Admin` |
-| **Refresh-Rate** | Sekunden zwischen Updates | `10` |
+| **fritz_host** | IP/Hostname der Fritz!Box | `fritz.box` |
+| **fritz_pass** | Admin-Passwort | - |
+| **fritz_user** | Benutzername | `Admin` |
 
-### Beispiel-Konfiguration
+### Beispiel:
 
 ```yaml
 fritz_host: fritz.box
 fritz_pass: dein_passwort
-fritz_user: Admin
-refresh_rate: 15
+fritz_user: Tilli
 ```
 
-## 🌟 Zugriff
+## 🚀 Benutzung
 
-Nach erfolgreicher Installation:
+### Start
 
-1. Öffne Home Assistant
-2. Gehe zu **Einstellungen → Add-ons & Integrationen**
-3. Klicke auf **Fritz!Box Mesh Overview**
-4. Klicke auf den Link unter **Web Interface** (Port 8000)
+1. Konfiguriere wie oben
+2. Klicke **Starten**
+3. Warte bis Status zeigt: `✓ Fritz!Box live verfügbar`
+4. Klicke **OPEN WEB UI** Button
 
-Oder direkt im Browser:
-```
-http://[YOUR_HOME_ASSISTANT_IP]:8000
-```
-
-## 📄 Logs ansehen
-
-So schaust du dir die Logs an:
+### Web-Interface
 
 ```
+http://192.168.1.100:8000
+```
+
+Du siehst deine Fritz!Box **live und interaktiv** - nicht als Screenshot!
+
+## 🎮 Was du tun kannst
+
+✅ Auf Links klicken  
+✅ Formularfelder ausfüllen  
+✅ Buttons drücken  
+✅ Durch Menüs navigieren  
+✅ Einstellungen ändern  
+✅ In Echtzeit sehen  
+
+## 🔧 API Endpoints (Optional)
+
+Für erweiterte Nutzung:
+
+### Status prüfen
+```bash
+curl http://localhost:8000/api/status
+# {"status": "ready"}
+```
+
+### Zu URL navigieren
+```bash
+curl -X POST http://localhost:8000/api/navigate \
+  -H "Content-Type: application/json" \
+  -d '{"url": "http://fritz.box/#/mesh"}'
+```
+
+### Element klicken
+```bash
+curl -X POST http://localhost:8000/api/click \
+  -H "Content-Type: application/json" \
+  -d '{"selector": "#submitBtn"}'
+```
+
+### Formularfeld ausfüllen
+```bash
+curl -X POST http://localhost:8000/api/fill \
+  -H "Content-Type: application/json" \
+  -d '{"selector": "#inputField", "value": "Neuer Wert"}'
+```
+
+## 📺 Logs ansehen
+
+```bash
 ha supervisor logs --addon 8d5557f1_fritzmesh
 ```
 
-Oder in der UI:
-1. Gehe zu **Einstellungen → Add-ons & Integrationen**
-2. Wähle das Addon
-3. Scrolle zu **Logs**
+Sollte zeigen:
+```
+✓ Browser initialisiert und bereit!
+✓ Fritz!Box live verfügbar
+```
 
-## 🔧 Fehlerbehebung
+## 🐛 Fehlerbehebung
 
-### "Addon konnte nicht installiert werden"
+### "Fehler beim Verbinden"
 
-**Lösung:**
-- Warte 10 Minuten (Download/Build kann lange dauern)
-- Überprüfe Docker-Speicher: `ha docker stats`
-- Starte Home Assistant neu
-
-### "Weiße Seite / Kein Screenshot"
-
-**Lösungen:**
-1. Passwort korrekt?
-   - Teste manuell: `http://fritz.box`
-   - Prüfe ob Login funktioniert
-
-2. Fritz!Box erreichbar?
+1. Ist die Fritz!Box unter fritz.box erreichbar?
    ```bash
    ping fritz.box
    ```
 
-3. Logs prüfen:
+2. Passwort korrekt?
+   - Teste Login auf http://fritz.box direkt
+
+3. Logs anschauen:
    ```bash
    ha supervisor logs --addon 8d5557f1_fritzmesh
    ```
 
-### "Login fehlgeschlagen"
+### "Laden bleibt hängen"
 
-**Prüfe:**
-- Passwort ist korrekt
-- Benutzer existiert auf Fritz!Box
-- Fritz!Box nicht gesperrt (3x falsches PW)
+- Addon neu starten
+- Home Assistant neu starten
+- Prüfe Netzwerk-Verbindung zur Fritz!Box
 
-## 📇 Versionshistorie
+### "Nur weiße Seite"
 
-### v2.1.0 (Aktuell)
-- 🆕 Playwright statt Selenium (schneller, stabiler)
-- 🚀 Deutlich schnelleres Docker-Build
-- 🔓 Bessere Fehlerbehandlung
+- Logs prüfen (siehe oben)
+- Browser-Konsole prüfen (F12 im Browser)
+- Addon-Logs für Fehler durchsuchen
 
-### v2.0.0
-- Initiale Selenium-Implementierung
-- FritzOS 8.0+ Unterstützung
+## 📝 Versionshistorie
 
-## 📝 Lizenz
+### v3.0.0 (Aktuell)
+🎉 **Live Interactive Proxy!**
+- Echte HTML statt Screenshots
+- Vollständig interaktiv
+- Persistente Session
+- API für erweiterte Nutzung
 
-MIT License - Siehe LICENSE Datei
+### v2.2.x
+- Stable Screenshot-Version
+- Auto-Refresh
+- Einfache GUI
 
-## 🙋 Support
+## 📄 Lizenz
 
-Bei Problemen:
+MIT License - Siehe LICENSE
 
-1. Überprüfe die Logs
-2. Öffne ein Issue auf GitHub
+## 💬 Support
+
+Bei Fragen oder Problemen:
+1. Schau in die Logs
+2. Erstelle ein Issue auf GitHub
 3. Beschreibe dein Problem detailliert
 
 ---
 
-**Fritz!Box kompatibel:** 7.0+  
-**FritzOS kompatibel:** 6.0 - 8.x  
-**Home Assistant:** 2024.1+
+**Kompatibilität:**
+- Fritz!Box: 7.0+
+- FritzOS: 6.0-8.x
+- Home Assistant: 2024.1+
+
+**Möchtest du die alte Screenshot-Version?** → Checkout v2.2.x Branch
