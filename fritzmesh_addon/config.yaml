@@ -16,6 +16,7 @@ ports:
   8000/tcp: 8000
 ports_description:
   8000/tcp: "Web-Interface Port"
+webui: "http://[HOST]:[PORT:8000]/"
 options:
   fritz_host: "fritz.box"
   fritz_pass: ""
