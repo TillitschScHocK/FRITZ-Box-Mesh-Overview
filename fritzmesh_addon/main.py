@@ -2,7 +2,7 @@
 """
 Fritz!Box Mesh Overview - Playwright-basierte Anwendung
 Kompatibel mit FritzOS 8.0+ (Javascript-obfuskiert)
-Schnell und stabil ohne Chrome-Installation
+Schnell und stabil
 """
 
 import os
@@ -31,9 +31,6 @@ else:
 SCREENSHOT_PATH = "/app/static/mesh.png"
 Path("/app/static").mkdir(parents=True, exist_ok=True)
 
-# Placeholder-Bild erstellen (falls Mesh-Screenshot nicht verfügbar)
-PLACEHOLDER_PATH = "/app/static/placeholder.png"
-
 # Logging
 logging.basicConfig(
     level=logging.INFO,
@@ -50,154 +47,92 @@ app.logger.setLevel(logging.ERROR)
 last_screenshot_time = 0
 
 
-# ============== PLACEHOLDER IMAGE ==============
-def create_placeholder():
-    """Erstellt ein Placeholder-Bild wenn keine Daten verfügbar sind"""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        
-        img = Image.new('RGB', (1920, 1080), color='white')
-        draw = ImageDraw.Draw(img)
-        
-        # Text zeichnen
-        text = "Warte auf Mesh-Daten...\n\nBrowser wird gestartet..."
-        draw.text((960, 540), text, fill='gray', anchor="mm", align="center")
-        
-        img.save(PLACEHOLDER_PATH)
-        logger.info("Placeholder-Bild erstellt")
-    except Exception as e:
-        logger.warning(f"Placeholder-Fehler (ignoriert): {e}")
-
-
 # ============== PLAYWRIGHT FUNCTIONS ==============
-async def login_to_fritz(page):
-    """Authentifiziert sich bei der FritzBox"""
-    try:
-        logger.info(f"\u00d6ffne {FRITZ_URL}...")
-        await page.goto(FRITZ_URL, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(2000)
-
-        # Prüfe ob Login notwendig ist
-        try:
-            login_field = page.query_selector("#uiPassInput")
-            if login_field is None:
-                logger.info("Bereits angemeldet")
-                return True
-
-            logger.info("Login-Formular gefunden")
-
-            # Benutzer-Dropdown (optional)
-            try:
-                user_select = page.query_selector("#uiViewUser")
-                if user_select:
-                    await user_select.select_option(value=FRITZ_USER)
-                    logger.info(f"Benutzer '{FRITZ_USER}' ausgewählt")
-                    await page.wait_for_timeout(500)
-            except:
-                pass
-
-            # Passwort eingeben
-            logger.info("Gebe Passwort ein...")
-            await page.fill("#uiPassInput", FRITZ_PASS)
-            await page.wait_for_timeout(300)
-
-            # Login-Button suchen und klicken
-            login_btn = page.query_selector("#submitLoginBtn")
-            if login_btn:
-                await login_btn.click()
-                logger.info("Login-Button geklickt")
-            else:
-                # Fallback: Enter drücken
-                await page.press("#uiPassInput", "Enter")
-                logger.info("Enter gedrückt")
-
-            # Warte auf Weiterleitung
-            await page.wait_for_timeout(4000)
-
-            # Prüfe ob erfolgreich
-            current_url = page.url.lower()
-            if "login" not in current_url and "anmeldung" not in current_url:
-                logger.info("✓ Login erfolgreich!")
-                return True
-            else:
-                logger.error("✗ Login fehlgeschlagen")
-                return False
-
-        except Exception as e:
-            logger.error(f"Login-Fehler: {e}")
-            return False
-
-    except Exception as e:
-        logger.error(f"Fehler beim Öffnen der Seite: {e}")
-        return False
-
-
-async def navigate_to_mesh(page):
-    """Navigiert zur Mesh-Übersicht"""
-    try:
-        mesh_url = f"{FRITZ_URL}/#/mesh"
-        logger.info(f"Navigiere zu Mesh: {mesh_url}")
-        await page.goto(mesh_url, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(3000)
-
-        # Warte auf js3-view Element
-        try:
-            await page.wait_for_selector("js3-view", timeout=10000)
-            logger.info("✓ Mesh-Seite geladen")
-            await page.wait_for_timeout(2000)
-            return True
-        except:
-            logger.warning("js3-view nicht gefunden, versuche trotzdem Screenshot...")
-            await page.wait_for_timeout(2000)
-            return True
-
-    except Exception as e:
-        logger.error(f"Mesh-Navigation Fehler: {e}")
-        return False
-
-
-async def take_screenshot(page):
-    """Macht einen Screenshot"""
-    global last_screenshot_time
-    try:
-        await page.evaluate("window.scrollTo(0, 0)")
-        await page.wait_for_timeout(500)
-        await page.screenshot(path=SCREENSHOT_PATH, full_page=False)
-        last_screenshot_time = time.time()
-        return True
-    except Exception as e:
-        logger.error(f"Screenshot-Fehler: {e}")
-        return False
-
-
 async def browser_session():
-    """Haupt-Browser-Session"""
+    """Haupt-Browser-Session mit Mesh-Screenshot"""
     async with async_playwright() as p:
         browser = None
+        context = None
+        page = None
+        
         try:
             logger.info("Starte Chromium Browser...")
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(viewport={"width": 1920, "height": 1080})
+            browser = await p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox']
+            )
+            
+            # Context mit User-Agent erstellen (nicht page.set_user_agent!)
+            context = await browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            )
             page = await context.new_page()
 
-            # User-Agent setzen
-            await page.set_user_agent(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            )
+            # === LOGIN ===
+            logger.info(f"Öffne Fritz!Box: {FRITZ_URL}")
+            await page.goto(FRITZ_URL, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(2000)
 
-            # Login
-            if not await login_to_fritz(page):
-                raise Exception("Login failed")
+            # Prüfe ob Login nötig ist
+            login_field = page.query_selector("#uiPassInput")
+            
+            if login_field:
+                logger.info("Login-Formular gefunden")
+                
+                # Benutzer wählen (falls möglich)
+                try:
+                    user_select = page.query_selector("#uiViewUser")
+                    if user_select:
+                        await user_select.select_option(value=FRITZ_USER)
+                        logger.info(f"Benutzer '{FRITZ_USER}' ausgewählt")
+                        await page.wait_for_timeout(300)
+                except Exception as e:
+                    logger.debug(f"Benutzer-Auswahl fehlgeschlagen: {e}")
+                
+                # Passwort eingeben
+                logger.info("Gebe Passwort ein...")
+                await page.fill("#uiPassInput", FRITZ_PASS)
+                await page.wait_for_timeout(200)
+                
+                # Login absenden
+                try:
+                    submit_btn = page.query_selector("#submitLoginBtn")
+                    if submit_btn:
+                        await submit_btn.click()
+                        logger.info("Login-Button geklickt")
+                    else:
+                        await page.press("#uiPassInput", "Enter")
+                        logger.info("Enter gedrückt")
+                except Exception as e:
+                    logger.warning(f"Login-Button Fehler: {e}")
+                
+                # Warte auf Weiterleitung
+                await page.wait_for_timeout(4000)
+                logger.info("✓ Login abgeschlossen")
+            else:
+                logger.info("Bereits angemeldet (kein Login-Formular)")
 
-            # Zur Mesh-Seite navigieren
-            if not await navigate_to_mesh(page):
-                raise Exception("Mesh navigation failed")
+            # === MESH-NAVIGATION ===
+            mesh_url = f"{FRITZ_URL}/#/mesh"
+            logger.info(f"Navigiere zu: {mesh_url}")
+            await page.goto(mesh_url, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(3000)
+
+            # Warte auf Mesh-Element
+            try:
+                await page.wait_for_selector("js3-view", timeout=8000)
+                logger.info("✓ Mesh-Element gefunden")
+            except:
+                logger.warning("js3-view nicht gefunden, versuche trotzdem Screenshot")
+            
+            await page.wait_for_timeout(2000)  # Rendering abwarten
 
             logger.info("=" * 50)
-            logger.info(f"✓ Bereit! Screenshots alle {REFRESH_RATE}s")
+            logger.info(f"✓ BEREIT! Screenshots alle {REFRESH_RATE}s")
             logger.info("=" * 50)
 
-            # Screenshot-Loop
+            # === SCREENSHOT-LOOP ===
             screenshot_count = 0
             error_count = 0
             session_start = time.time()
@@ -205,31 +140,42 @@ async def browser_session():
             while True:
                 # Nach 30 Minuten neu laden
                 if time.time() - session_start > 1800:
-                    logger.info("♿ Session-Refresh nach 30 Minuten")
+                    logger.info("⟳ Session-Refresh nach 30 Minuten")
                     break
 
-                # Screenshot machen
-                if await take_screenshot(page):
+                # Screenshot
+                try:
+                    await page.evaluate("window.scrollTo(0, 0)")
+                    await page.wait_for_timeout(300)
+                    await page.screenshot(path=SCREENSHOT_PATH, full_page=False)
                     screenshot_count += 1
-                    if screenshot_count % 10 == 1:
-                        logger.info(f"Screenshot #{screenshot_count} erfasst")
+                    
+                    if screenshot_count == 1:
+                        logger.info("✓ Erstes Screenshot erfolgreich!")
+                    elif screenshot_count % 20 == 0:
+                        logger.info(f"✓ Screenshot #{screenshot_count} erfasst")
+                    
                     error_count = 0
-                else:
+                except Exception as e:
+                    logger.error(f"Screenshot-Fehler: {e}")
                     error_count += 1
                     if error_count >= 5:
-                        logger.error("Zu viele Screenshot-Fehler")
+                        logger.error("Zu viele Screenshot-Fehler, starte neu")
                         break
 
                 # Warten bis nächster Screenshot
                 await page.wait_for_timeout(REFRESH_RATE * 1000)
 
-            await context.close()
-            await browser.close()
-
         except Exception as e:
-            logger.error(f"Browser-Session Fehler: {e}")
+            logger.error(f"Browser-Fehler: {e}")
+        
         finally:
+            # Cleanup
             try:
+                if page:
+                    await page.close()
+                if context:
+                    await context.close()
                 if browser:
                     await browser.close()
             except:
@@ -237,7 +183,7 @@ async def browser_session():
 
 
 def browser_loop():
-    """Wrapper für Async-Browser-Loop"""
+    """Wrapper für Async-Loop mit Auto-Restart"""
     error_count = 0
     max_errors = 3
 
@@ -248,27 +194,28 @@ def browser_loop():
         except Exception as e:
             logger.error(f"Browser-Loop Fehler: {e}")
             error_count += 1
-        finally:
-            if error_count >= max_errors:
-                logger.info("⚠ Warte 60s vor Neustart...")
-                time.sleep(60)
-                error_count = 0
-            else:
-                logger.info("⏱ Warte 10s vor Neustart...")
-                time.sleep(10)
+        
+        # Warten vor Neustart
+        if error_count >= max_errors:
+            logger.warning(f"⚠ Zu viele Fehler ({error_count}), warte 60s")
+            time.sleep(60)
+            error_count = 0
+        else:
+            logger.info("⟳ Starte Browser neu...")
+            time.sleep(5)
 
 
 # ============== FLASK ROUTES ==============
 @app.route("/")
 def index():
-    """Haupt-Webseite mit Auto-Refresh"""
+    """Haupt-Webseite"""
     html = f"""
     <!DOCTYPE html>
     <html lang="de">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Fritz!Box Mesh</title>
+        <title>Fritz!Box Mesh Übersicht</title>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{
@@ -290,6 +237,7 @@ def index():
                 display: flex;
                 flex-direction: column;
                 gap: 10px;
+                overflow: hidden;
             }}
             h1 {{
                 color: #333;
@@ -300,13 +248,13 @@ def index():
                 color: #666;
                 font-size: 12px;
             }}
-            .image-container {{
+            .image-wrapper {{
                 flex: 1;
                 display: flex;
                 justify-content: center;
                 align-items: center;
                 overflow: auto;
-                background: #f5f5f5;
+                background: #f9f9f9;
                 border-radius: 8px;
                 min-height: 400px;
                 position: relative;
@@ -321,59 +269,27 @@ def index():
                 text-align: center;
                 color: #999;
             }}
-            .spinner {{
-                border: 3px solid #f3f3f3;
-                border-top: 3px solid #667eea;
-                border-radius: 50%;
-                width: 40px;
-                height: 40px;
-                animation: spin 1s linear infinite;
-                margin: 0 auto 10px;
-            }}
-            @keyframes spin {{
-                0% {{ transform: rotate(0deg); }}
-                100% {{ transform: rotate(360deg); }}
-            }}
         </style>
         <script>
-            var imageLoaded = false;
             var refreshRate = {REFRESH_RATE};
+            var imageLoaded = false;
             
             function updateImage() {{
                 var img = document.getElementById('mesh-img');
-                var loader = document.getElementById('loader');
-                var timestamp = Date.now();
-                
-                var newImg = new Image();
-                newImg.onload = function() {{
-                    img.src = '/mesh.png?t=' + timestamp;
-                    imageLoaded = true;
-                    if (loader) loader.style.display = 'none';
-                }};
-                newImg.onerror = function() {{
-                    console.log('Bild fehlt, warte...');
-                    if (loader) loader.style.display = 'flex';
-                }};
-                newImg.src = '/mesh.png?t=' + timestamp;
+                var newSrc = '/mesh.png?t=' + Date.now();
+                img.src = newSrc;
             }}
             
-            // Initial load
             window.addEventListener('load', updateImage);
-            
-            // Auto-refresh
             setInterval(updateImage, refreshRate * 1000);
         </script>
     </head>
     <body>
         <div class="container">
-            <h1>🌐 Fritz!Box Mesh</h1>
-            <div class="info">Auto-Update: {REFRESH_RATE}s</div>
-            <div class="image-container">
-                <img id="mesh-img" src="/mesh.png" alt="Lade Mesh...">
-                <div id="loader" class="loading" style="display: flex; flex-direction: column; align-items: center;">
-                    <div class="spinner"></div>
-                    <p>Starte Browser und lade Mesh-Daten...</p>
-                </div>
+            <h1>🌐 Fritz!Box Mesh Übersicht</h1>
+            <div class="info">Automatische Aktualisierung: {REFRESH_RATE} Sekunden</div>
+            <div class="image-wrapper">
+                <img id="mesh-img" src="/mesh.png" alt="Lädt Mesh-Daten...">
             </div>
         </div>
     </body>
@@ -384,7 +300,7 @@ def index():
 
 @app.route("/mesh.png")
 def get_image():
-    """Liefert das Screenshot-Bild"""
+    """Liefert das Mesh-Screenshot-Bild"""
     if os.path.exists(SCREENSHOT_PATH):
         return send_file(
             SCREENSHOT_PATH,
@@ -392,48 +308,44 @@ def get_image():
             max_age=0,
             add_etags=False,
         )
-    elif os.path.exists(PLACEHOLDER_PATH):
-        return send_file(
-            PLACEHOLDER_PATH,
-            mimetype="image/png",
-            max_age=0,
-            add_etags=False,
-        )
-    return "Keine Daten verfügbar", 503
+    return "Mesh-Daten werden generiert...", 503
 
 
 @app.route("/health")
 def health():
-    """Health-Check"""
+    """Health-Check Endpoint"""
     if os.path.exists(SCREENSHOT_PATH):
         age = time.time() - os.path.getmtime(SCREENSHOT_PATH)
-        status = "ok" if age < (REFRESH_RATE * 3) else "stale"
-        return {"status": status, "age": int(age)}, 200
-    return {"status": "no_image"}, 503
+        status = "healthy" if age < (REFRESH_RATE * 3) else "degraded"
+        return {"status": status, "age_seconds": int(age)}, 200
+    return {"status": "initializing"}, 503
 
 
 # ============== MAIN ==============
 if __name__ == "__main__":
-    # Placeholder erstellen
-    create_placeholder()
-    
-    logger.info("=" * 50)
-    logger.info("Fritz!Box Mesh Overview v2.1")
-    logger.info("=" * 50)
-    logger.info(f"Host: {FRITZ_URL}")
+    logger.info("=" * 60)
+    logger.info("Fritz!Box Mesh Overview v2.2")
+    logger.info("=" * 60)
+    logger.info(f"Fritz!Box: {FRITZ_URL}")
     logger.info(f"Benutzer: {FRITZ_USER}")
     logger.info(f"Refresh-Rate: {REFRESH_RATE}s")
     logger.info(f"Passwort: {'✓ Gesetzt' if FRITZ_PASS else '✗ NICHT GESETZT'}")
-    logger.info("=" * 50)
+    logger.info("=" * 60)
 
     # Browser-Thread starten
     browser_thread = threading.Thread(target=browser_loop, daemon=True)
     browser_thread.start()
 
     # Flask-Server starten
-    logger.info("Starte Webserver auf Port 8000...")
+    logger.info("Starte Webserver auf Port 8000...\n")
     try:
-        app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False, threaded=True)
+        app.run(
+            host="0.0.0.0",
+            port=8000,
+            debug=False,
+            use_reloader=False,
+            threaded=True
+        )
     except KeyboardInterrupt:
         logger.info("Herunterfahren...")
         sys.exit(0)
