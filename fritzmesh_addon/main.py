@@ -62,7 +62,7 @@ async def browser_session():
                 args=['--no-sandbox', '--disable-setuid-sandbox']
             )
             
-            # Context mit User-Agent erstellen (nicht page.set_user_agent!)
+            # Context mit User-Agent erstellen
             context = await browser.new_context(
                 viewport={"width": 1920, "height": 1080},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -105,7 +105,8 @@ async def browser_session():
                         await page.press("#uiPassInput", "Enter")
                         logger.info("Enter gedrückt")
                 except Exception as e:
-                    logger.warning(f"Login-Button Fehler: {e}")
+                    logger.warning(f"Login-Button Fehler (ignoriert): {e}")
+                    # Fallback: einfach weitermachen
                 
                 # Warte auf Weiterleitung
                 await page.wait_for_timeout(4000)
@@ -264,15 +265,9 @@ def index():
                 max-height: 100%;
                 object-fit: contain;
             }}
-            .loading {{
-                position: absolute;
-                text-align: center;
-                color: #999;
-            }}
         </style>
         <script>
             var refreshRate = {REFRESH_RATE};
-            var imageLoaded = false;
             
             function updateImage() {{
                 var img = document.getElementById('mesh-img');
@@ -305,8 +300,7 @@ def get_image():
         return send_file(
             SCREENSHOT_PATH,
             mimetype="image/png",
-            max_age=0,
-            add_etags=False,
+            max_age=0
         )
     return "Mesh-Daten werden generiert...", 503
 
