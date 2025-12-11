@@ -2,6 +2,9 @@
 
 set -e
 
+# Virtualenv aktivieren
+source /opt/venv/bin/activate
+
 # Home Assistant Addon Config auslesen
 FRITZ_HOST=$(bashio::config 'fritz_host')
 FRITZ_PASS=$(bashio::config 'fritz_pass')
