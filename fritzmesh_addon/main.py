@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Fritz!Box Mesh Overview - Selenium-basierte Screenshot-Anwendung
+Fritz!Box Mesh Overview - Playwright-basierte Anwendung
 Kompatibel mit FritzOS 8.0+ (Javascript-obfuskiert)
+Schnell und stabil ohne Chrome-Installation
 """
 
 import os
@@ -9,19 +10,10 @@ import sys
 import time
 import logging
 import threading
+import asyncio
 from pathlib import Path
 from flask import Flask, send_file, render_template_string
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import (
-    TimeoutException,
-    WebDriverException,
-    NoSuchElementException,
-)
+from playwright.async_api import async_playwright
 
 # ============== KONFIGURATION ==============
 FRITZ_HOST = os.getenv("FRITZ_HOST", "fritz.box")
@@ -39,13 +31,11 @@ else:
 SCREENSHOT_PATH = "/app/static/mesh.png"
 Path("/app/static").mkdir(parents=True, exist_ok=True)
 
-# Logging konfigurieren
+# Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
 
@@ -54,168 +44,102 @@ app = Flask(__name__)
 app.logger.setLevel(logging.ERROR)
 
 # Globale Variablen
-driver = None
-driver_lock = threading.Lock()
 last_screenshot_time = 0
 
 
-# ============== CHROME DRIVER FUNCTIONS ==============
-def get_chrome_options():
-    """Erstellt Chrome-Optionen für Headless-Betrieb"""
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument(
-        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    )
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-logging")
-    options.add_argument("--log-level=3")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-    return options
-
-
-def create_driver():
-    """Erstellt einen neuen Chrome WebDriver"""
-    global driver
+# ============== PLAYWRIGHT FUNCTIONS ==============
+async def login_to_fritz(page):
+    """Authentifiziert sich bei der FritzBox"""
     try:
-        logger.info("Erstelle Chrome WebDriver...")
-        options = get_chrome_options()
-        driver = webdriver.Chrome(options=options)
-        driver.set_page_load_timeout(45)
-        driver.set_script_timeout(30)
-        
-        # Anti-Detection
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        logger.info("✓ Chrome WebDriver bereit")
-        return driver
-    except Exception as e:
-        logger.error(f"✗ Fehler beim Erstellen des Drivers: {e}")
-        if driver:
+        logger.info(f"Öffne {FRITZ_URL}...")
+        await page.goto(FRITZ_URL, wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_timeout(2000)
+
+        # Prüfe ob Login notwendig ist
+        try:
+            login_field = page.query_selector("#uiPassInput")
+            if login_field is None:
+                logger.info("Bereits angemeldet")
+                return True
+
+            logger.info("Login-Formular gefunden")
+
+            # Benutzer-Dropdown (optional)
             try:
-                driver.quit()
+                user_select = page.query_selector("#uiViewUser")
+                if user_select:
+                    await user_select.select_option(value=FRITZ_USER)
+                    logger.info(f"Benutzer '{FRITZ_USER}' ausgewählt")
+                    await page.wait_for_timeout(500)
             except:
                 pass
-            driver = None
-        raise
 
+            # Passwort eingeben
+            logger.info("Gebe Passwort ein...")
+            await page.fill("#uiPassInput", FRITZ_PASS)
+            await page.wait_for_timeout(300)
 
-def close_driver():
-    """Schließt den WebDriver"""
-    global driver
-    if driver:
-        try:
-            driver.quit()
-            logger.info("Chrome WebDriver geschlossen")
-        except:
-            pass
-        driver = None
+            # Login-Button suchen und klicken
+            login_btn = page.query_selector("#submitLoginBtn")
+            if login_btn:
+                await login_btn.click()
+                logger.info("Login-Button geklickt")
+            else:
+                # Fallback: Enter drücken
+                await page.press("#uiPassInput", "Enter")
+                logger.info("Enter gedrückt")
 
+            # Warte auf Weiterleitung
+            await page.wait_for_timeout(4000)
 
-# ============== LOGIN FUNCTION ==============
-def perform_login():
-    """Führt Login in FritzBox durch"""
-    global driver
-    try:
-        logger.info(f"Navigiere zu {FRITZ_URL}...")
-        driver.get(FRITZ_URL)
-        time.sleep(2)
+            # Prüfe ob erfolgreich
+            current_url = page.url.lower()
+            if "login" not in current_url and "anmeldung" not in current_url:
+                logger.info("✓ Login erfolgreich!")
+                return True
+            else:
+                logger.error("✗ Login fehlgeschlagen")
+                return False
 
-        # Prüfe ob Login nötig ist
-        try:
-            logger.info("Suche Login-Formular...")
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.ID, "uiPassInput"))
-            )
-            logger.info("Login-Formular gefunden")
-        except TimeoutException:
-            logger.info("Kein Login nötig - bereits eingeloggt")
-            return True
-
-        # Benutzer auswählen (falls mehrere)
-        try:
-            user_select = driver.find_element(By.ID, "uiViewUser")
-            user_options = user_select.find_elements(By.TAG_NAME, "option")
-            selected_user = None
-            for option in user_options:
-                if option.get_attribute("value") == FRITZ_USER:
-                    selected_user = option
-                    break
-            if selected_user:
-                selected_user.click()
-                logger.info(f"Benutzer '{FRITZ_USER}' ausgewählt")
-                time.sleep(0.5)
-        except NoSuchElementException:
-            logger.info("Benutzer-Dropdown nicht vorhanden")
-
-        # Passwort eingeben
-        logger.info("Gebe Passwort ein...")
-        password_field = driver.find_element(By.ID, "uiPassInput")
-        password_field.clear()
-        time.sleep(0.2)
-        password_field.send_keys(FRITZ_PASS)
-        time.sleep(0.5)
-        password_field.send_keys(Keys.RETURN)
-        logger.info("Login-Anfrage gesendet")
-
-        # Warte auf erfolgreichen Login
-        time.sleep(4)
-
-        # Prüfe ob Login erfolgreich
-        if "login" not in driver.current_url.lower():
-            logger.info("✓ Login erfolgreich!")
-            return True
-        else:
-            logger.error("✗ Login fehlgeschlagen")
+        except Exception as e:
+            logger.error(f"Login-Fehler: {e}")
             return False
 
     except Exception as e:
-        logger.error(f"Login-Fehler: {e}")
+        logger.error(f"Fehler beim Öffnen der Seite: {e}")
         return False
 
 
-# ============== MESH NAVIGATION ==============
-def navigate_to_mesh():
+async def navigate_to_mesh(page):
     """Navigiert zur Mesh-Übersicht"""
-    global driver
     try:
         mesh_url = f"{FRITZ_URL}/#/mesh"
         logger.info(f"Navigiere zu Mesh: {mesh_url}")
-        driver.get(mesh_url)
-        time.sleep(3)
+        await page.goto(mesh_url, wait_until="domcontentloaded", timeout=30000)
+        await page.wait_for_timeout(3000)
 
         # Warte auf js3-view Element
-        logger.info("Warte auf Mesh-Rendering...")
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "js3-view"))
-        )
-        logger.info("✓ Mesh-Seite geladen")
+        try:
+            await page.wait_for_selector("js3-view", timeout=10000)
+            logger.info("✓ Mesh-Seite geladen")
+            await page.wait_for_timeout(2000)
+            return True
+        except:
+            logger.warning("js3-view nicht gefunden, versuche trotzdem Screenshot...")
+            return True
 
-        # Warte noch etwas für vollständiges Rendering
-        time.sleep(3)
-        return True
-
-    except TimeoutException:
-        logger.warning("Mesh-Element nicht gefunden, versuche trotzdem Screenshot...")
-        return True
     except Exception as e:
         logger.error(f"Mesh-Navigation Fehler: {e}")
         return False
 
 
-# ============== SCREENSHOT FUNCTION ==============
-def take_screenshot():
-    """Macht einen Screenshot der Mesh-Übersicht"""
-    global driver, last_screenshot_time
+async def take_screenshot(page):
+    """Macht einen Screenshot"""
+    global last_screenshot_time
     try:
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(0.5)
-        driver.save_screenshot(SCREENSHOT_PATH)
+        await page.evaluate("window.scrollTo(0, 0)")
+        await page.wait_for_timeout(500)
+        await page.screenshot(path=SCREENSHOT_PATH, full_page=False)
         last_screenshot_time = time.time()
         return True
     except Exception as e:
@@ -223,26 +147,26 @@ def take_screenshot():
         return False
 
 
-# ============== MAIN BROWSER LOOP ==============
-def browser_loop():
-    """Haupt-Loop: Authentifizierung und Screenshot-Erfassung"""
-    global driver
-    error_count = 0
-    max_errors = 3
-
-    while True:
+async def browser_session():
+    """Haupt-Browser-Session"""
+    async with async_playwright() as p:
         try:
-            # Driver erstellen
-            if driver is None:
-                create_driver()
-                error_count = 0
+            logger.info("Starte Chromium Browser...")
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(viewport={"width": 1920, "height": 1080})
+            page = await context.new_page()
 
-            # Login durchführen
-            if not perform_login():
+            # User-Agent setzen
+            await page.set_user_agent(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            )
+
+            # Login
+            if not await login_to_fritz(page):
                 raise Exception("Login failed")
 
             # Zur Mesh-Seite navigieren
-            if not navigate_to_mesh():
+            if not await navigate_to_mesh(page):
                 raise Exception("Mesh navigation failed")
 
             logger.info("=" * 50)
@@ -251,47 +175,63 @@ def browser_loop():
 
             # Screenshot-Loop
             screenshot_count = 0
+            error_count = 0
             session_start = time.time()
 
             while True:
-                # Session nach 30 Minuten neu laden
+                # Nach 30 Minuten neu laden
                 if time.time() - session_start > 1800:
                     logger.info("Session-Refresh nach 30 Minuten")
                     break
 
                 # Screenshot machen
-                if take_screenshot():
+                if await take_screenshot(page):
                     screenshot_count += 1
                     if screenshot_count % 10 == 1:
                         logger.info(f"Screenshot #{screenshot_count} erfasst")
                     error_count = 0
                 else:
                     error_count += 1
-                    if error_count >= max_errors:
+                    if error_count >= 5:
                         logger.error("Zu viele Screenshot-Fehler")
                         break
 
                 # Warten bis nächster Screenshot
-                time.sleep(REFRESH_RATE)
+                await page.wait_for_timeout(REFRESH_RATE * 1000)
 
-        except WebDriverException as e:
-            logger.warning(f"WebDriver-Fehler: {e}")
-            error_count += 1
+            await context.close()
+            await browser.close()
+
         except Exception as e:
-            logger.warning(f"Fehler: {e}")
+            logger.error(f"Browser-Session Fehler: {e}")
+        finally:
+            try:
+                await context.close()
+                await browser.close()
+            except:
+                pass
+
+
+def browser_loop():
+    """Wrapper für Async-Browser-Loop"""
+    error_count = 0
+    max_errors = 3
+
+    while True:
+        try:
+            asyncio.run(browser_session())
+            error_count = 0
+        except Exception as e:
+            logger.error(f"Browser-Loop Fehler: {e}")
             error_count += 1
         finally:
-            # Cleanup
-            close_driver()
-
-        # Wartezeit vor Neustart
-        if error_count >= max_errors:
-            logger.info("Warte 60s vor Neustart...")
-            time.sleep(60)
-            error_count = 0
-        else:
-            logger.info("Warte 10s vor Neustart...")
-            time.sleep(10)
+            if error_count >= max_errors:
+                logger.info("Warte 60s vor Neustart...")
+                time.sleep(60)
+                error_count = 0
+            else:
+                logger.info("Warte 10s vor Neustart...")
+                time.sleep(10)
 
 
 # ============== FLASK ROUTES ==============
@@ -314,26 +254,27 @@ def index():
                 align-items: center;
                 min-height: 100vh;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                padding: 10px;
             }}
             .container {{
                 background: white;
                 border-radius: 10px;
                 box-shadow: 0 20px 60px rgba(0,0,0,0.3);
                 padding: 20px;
-                max-width: 90vw;
-                max-height: 90vh;
+                max-width: 95vw;
+                max-height: 95vh;
                 display: flex;
                 flex-direction: column;
+                gap: 10px;
             }}
             h1 {{
                 color: #333;
-                margin-bottom: 10px;
-                font-size: 24px;
+                font-size: 20px;
+                margin: 0;
             }}
             .info {{
                 color: #666;
                 font-size: 12px;
-                margin-bottom: 15px;
             }}
             .image-container {{
                 flex: 1;
@@ -350,10 +291,6 @@ def index():
                 max-height: 100%;
                 object-fit: contain;
             }}
-            .loading {{
-                text-align: center;
-                color: #999;
-            }}
         </style>
         <script>
             function updateImage() {{
@@ -365,8 +302,8 @@ def index():
     </head>
     <body>
         <div class="container">
-            <h1>🌐 Fritz!Box Mesh</h1>
-            <div class="info">Auto-Refresh: {REFRESH_RATE}s</div>
+            <h1>🌐 Fritz!Box Mesh Übersicht</h1>
+            <div class="info">Auto-Update: {REFRESH_RATE}s</div>
             <div class="image-container">
                 <img id="mesh-img" src="/mesh.png" alt="Lädt...">
             </div>
@@ -403,7 +340,7 @@ def health():
 # ============== MAIN ==============
 if __name__ == "__main__":
     logger.info("=" * 50)
-    logger.info("Fritz!Box Mesh Overview v2.0.2")
+    logger.info("Fritz!Box Mesh Overview v2.1")
     logger.info("=" * 50)
     logger.info(f"Host: {FRITZ_URL}")
     logger.info(f"Benutzer: {FRITZ_USER}")
@@ -421,5 +358,4 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False)
     except KeyboardInterrupt:
         logger.info("Herunterfahren...")
-        close_driver()
         sys.exit(0)
